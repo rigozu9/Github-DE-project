@@ -1,0 +1,53 @@
+version: 2
+
+sources:
+  - name: github_source
+    database: PC_FIVETRAN_DB
+    schema: GITHUB
+
+    tables:
+      - name: REPOSITORY
+        columns:
+          - name: ID
+            tests:
+              - not_null
+              - unique
+
+      - name: COMMIT
+        columns:
+          - name: SHA
+            tests:
+              - not_null
+              - unique
+
+          - name: REPOSITORY_ID
+            tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('github_source', 'REPOSITORY')
+                    field: ID
+      # - name: USER
+      #   columns:
+      #     - name: ID
+      #       tests:
+      #         - unique
+      #         - not_null            
+      # - name: PULL_REQUEST
+      #   columns:
+      #     - name: ID
+      #       tests:
+      #         - unique
+      #         - not_null
+      # - name: ISSUE
+      #   columns:
+      #     - name: ID
+      #       tests:
+      #         - unique
+      #         - not_null
+      # - name: WORKFLOW_RUN
+      #   columns:
+      #     - name: ID
+      #       tests:
+      #         - unique
+      #         - not_null
