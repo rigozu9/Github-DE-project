@@ -1,0 +1,10 @@
+models:
+  - name: fct_repo_daily_activity
+    columns:
+      - name: repository_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_repositories')
+              field: id
+              severity: warn
