@@ -1,0 +1,2 @@
+# need to use older verion of dbt-core for fivetran automated syncing
+dbt-core==1.10.11
