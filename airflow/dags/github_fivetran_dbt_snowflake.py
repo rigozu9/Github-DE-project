@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 import requests
 from datetime import datetime, timedelta
@@ -7,12 +5,11 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.exceptions import AirflowException
 from airflow.operators.python import PythonOperator
-from airflow.sensors.python import PythonSensor
+from airflow.providers.standard.sensors.python import PythonSensor
 from airflow.providers.docker.operators.docker import DockerOperator
 from docker.types import Mount
 
 API_BASE = "https://api.fivetran.com/v1"
-
 
 def _req(method: str, path: str, payload: dict | None = None) -> dict:
     key = os.environ["FIVETRAN_API_KEY"]
@@ -26,20 +23,17 @@ def _req(method: str, path: str, payload: dict | None = None) -> dict:
 
 
 def ensure_manual_schedule() -> None:
-    # Optional but recommended: let Airflow be the scheduler of syncs
     cid = os.environ["FIVETRAN_CONNECTION_ID"]
     _req("PATCH", f"/connections/{cid}", {"schedule_type": "manual", "run_setup_tests": False})
 
 
 def trigger_sync(ti) -> None:
     cid = os.environ["FIVETRAN_CONNECTION_ID"]
+    conn = _req("GET", f"/connections/{cid}")["data"]
 
-    # snapshot current succeeded_at / failed_at to detect fresh completion
-    before = _req("GET", f"/connections/{cid}")["data"]["status"]
-    ti.xcom_push(key="before_succeeded_at", value=before.get("succeeded_at"))
-    ti.xcom_push(key="before_failed_at", value=before.get("failed_at"))
+    ti.xcom_push(key="before_succeeded_at", value=conn.get("succeeded_at"))
+    ti.xcom_push(key="before_failed_at", value=conn.get("failed_at"))
 
-    # Trigger sync: POST /v1/connections/{connectionId}/sync  {"force": true}
     _req("POST", f"/connections/{cid}/sync", {"force": True})
 
 
@@ -48,20 +42,19 @@ def wait_until_fresh_success(ti) -> bool:
     before_succeeded = ti.xcom_pull(key="before_succeeded_at", task_ids="trigger_fivetran_sync")
     before_failed = ti.xcom_pull(key="before_failed_at", task_ids="trigger_fivetran_sync")
 
-    data = _req("GET", f"/connections/{cid}")["data"]["status"]
-    sync_state = data.get("sync_state")         # scheduled / syncing / paused / rescheduled
-    succeeded_at = data.get("succeeded_at")
-    failed_at = data.get("failed_at")
+    conn = _req("GET", f"/connections/{cid}")["data"]
+    status = conn.get("status", {})
+    sync_state = status.get("sync_state")
 
-    # If still running, keep waiting
+    succeeded_at = conn.get("succeeded_at")
+    failed_at = conn.get("failed_at")
+
     if sync_state == "syncing":
         return False
 
-    # If failed_at changed, fail the task
     if failed_at and failed_at != before_failed:
         raise AirflowException(f"Fivetran sync failed (failed_at changed to {failed_at}).")
 
-    # We consider it successful when succeeded_at changes after our trigger
     return succeeded_at is not None and succeeded_at != before_succeeded
 
 
@@ -96,19 +89,20 @@ with DAG(
     host_home = os.environ["HOST_HOME"]
 
     t3 = DockerOperator(
-        task_id="dbt_run_test",
-        image="ghcr.io/dbt-labs/dbt-snowflake:1.9.1",
+        task_id="dbt_run",
+        image="ghcr.io/dbt-labs/dbt-snowflake:1.9.0",
         docker_url="unix://var/run/docker.sock",
         auto_remove='success',
+        mount_tmp_dir=False,
         command=[
-            "bash",
-            "-lc",
-            "dbt deps --project-dir /dbt && "
-            "dbt run  --project-dir /dbt --profiles-dir /root/.dbt --profile github_data_pipeline --target dev && "
-            "dbt test --project-dir /dbt --profiles-dir /root/.dbt --profile github_data_pipeline --target dev",
+            "run",
+            "--profiles-dir", "/root/.dbt",
+            "--project-dir", "/opt/dbt",
+            "--profile", "github_data_pipeline",
+            "--target", "dev",
         ],
         mounts=[
-            Mount(source=os.path.join(host_project_dir, "github-de"), target="/dbt", type="bind"),
+            Mount(source=os.path.join(host_project_dir, "github-de"), target="/opt/dbt", type="bind"),
             Mount(source=os.path.join(host_home, ".dbt"), target="/root/.dbt", type="bind"),
         ],
         environment={
@@ -122,4 +116,32 @@ with DAG(
         },
     )
 
-    t0_manual >> t1 >> t2 >> t3
+    t4 = DockerOperator(
+        task_id="dbt_run_test",
+        image="ghcr.io/dbt-labs/dbt-snowflake:1.9.0",
+        docker_url="unix://var/run/docker.sock",
+        auto_remove='success',
+        mount_tmp_dir=False,
+        command=[
+            "test",
+            "--profiles-dir", "/root/.dbt",
+            "--project-dir", "/opt/dbt",
+            "--profile", "github_data_pipeline",
+            "--target", "dev",
+        ],
+        mounts=[
+            Mount(source=os.path.join(host_project_dir, "github-de"), target="/opt/dbt", type="bind"),
+            Mount(source=os.path.join(host_home, ".dbt"), target="/root/.dbt", type="bind"),
+        ],
+        environment={
+            "SNOWFLAKE_ACCOUNT": os.environ["SNOWFLAKE_ACCOUNT"],
+            "SNOWFLAKE_USER": os.environ["SNOWFLAKE_USER"],
+            "SNOWFLAKE_PASSWORD": os.environ["SNOWFLAKE_PASSWORD"],
+            "SNOWFLAKE_ROLE": os.environ["SNOWFLAKE_ROLE"],
+            "SNOWFLAKE_WAREHOUSE": os.environ["SNOWFLAKE_WAREHOUSE"],
+            "SNOWFLAKE_DATABASE": os.environ["SNOWFLAKE_DATABASE"],
+            "SNOWFLAKE_SCHEMA": os.environ["SNOWFLAKE_SCHEMA"],
+        },
+    )
+
+    t0_manual >> t1 >> t2 >> t3 >> t4

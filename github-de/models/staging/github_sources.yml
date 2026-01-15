@@ -24,9 +24,8 @@ sources:
             tests:
               - not_null
               - relationships:
-                  arguments:
-                    to: source('github_source', 'REPOSITORY')
-                    field: ID
+                  to: source('github_source', 'REPOSITORY')
+                  field: ID
       # - name: USER
       #   columns:
       #     - name: ID
