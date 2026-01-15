@@ -1,0 +1,179 @@
+services:
+  # Airflow metadata DB (still needed)
+  postgres:
+    image: ${AIRFLOW_POSTGRES_IMAGE}
+    networks:
+      - elt_network
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_DB_USER} -d ${AIRFLOW_DB_NAME}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  init-airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - elt_network
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@${AIRFLOW_DB_HOST}:${AIRFLOW_DB_PORT}/${AIRFLOW_DB_NAME}
+      AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: ${AIRFLOW_EXECUTION_API_SERVER_URL}
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+
+      # Fivetran
+      FIVETRAN_API_KEY: ${FIVETRAN_API_KEY}
+      FIVETRAN_API_SECRET: ${FIVETRAN_API_SECRET}
+      FIVETRAN_CONNECTION_ID: ${FIVETRAN_CONNECTION_ID}
+
+      # Snowflake (for dbt via env_var)
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD}
+      SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+      SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA}
+
+      HOST_PROJECT_DIR: ${HOST_PROJECT_DIR}
+      HOST_HOME: ${HOST_HOME}
+    command: >
+      bash -c "airflow db migrate"
+
+  webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: root
+    depends_on:
+      init-airflow:
+        condition: service_completed_successfully
+    networks:
+      - elt_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${AIRFLOW_DAGS_DIR}:/opt/airflow/dags
+      - ${AIRFLOW_ELT_DIR}:/opt/airflow/elt
+      - ${DBT_PROJECT_DIR}:/opt/dbt
+      - ${DBT_PROFILES_DIR}:/root/.dbt
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@${AIRFLOW_DB_HOST}:${AIRFLOW_DB_PORT}/${AIRFLOW_DB_NAME}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: ${AIRFLOW_EXECUTION_API_SERVER_URL}
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
+
+      FIVETRAN_API_KEY: ${FIVETRAN_API_KEY}
+      FIVETRAN_API_SECRET: ${FIVETRAN_API_SECRET}
+      FIVETRAN_CONNECTION_ID: ${FIVETRAN_CONNECTION_ID}
+
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD}
+      SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+      SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA}
+
+      HOST_PROJECT_DIR: ${HOST_PROJECT_DIR}
+      HOST_HOME: ${HOST_HOME}
+    ports:
+      - "${AIRFLOW_WEBSERVER_PORT}:8080"
+    command: api-server
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: root
+    depends_on:
+      init-airflow:
+        condition: service_completed_successfully
+    networks:
+      - elt_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${AIRFLOW_DAGS_DIR}:/opt/airflow/dags
+      - ${AIRFLOW_ELT_DIR}:/opt/airflow/elt
+      - ${DBT_PROJECT_DIR}:/opt/dbt
+      - ${DBT_PROFILES_DIR}:/root/.dbt
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@${AIRFLOW_DB_HOST}:${AIRFLOW_DB_PORT}/${AIRFLOW_DB_NAME}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: ${AIRFLOW_EXECUTION_API_SERVER_URL}
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
+
+      FIVETRAN_API_KEY: ${FIVETRAN_API_KEY}
+      FIVETRAN_API_SECRET: ${FIVETRAN_API_SECRET}
+      FIVETRAN_CONNECTION_ID: ${FIVETRAN_CONNECTION_ID}
+
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD}
+      SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+      SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA}
+
+      HOST_PROJECT_DIR: ${HOST_PROJECT_DIR}
+      HOST_HOME: ${HOST_HOME}
+    command: scheduler
+
+  dag_processor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: root
+    depends_on:
+      init-airflow:
+        condition: service_completed_successfully
+    networks:
+      - elt_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${AIRFLOW_DAGS_DIR}:/opt/airflow/dags
+      - ${AIRFLOW_ELT_DIR}:/opt/airflow/elt
+      - ${DBT_PROJECT_DIR}:/opt/dbt
+      - ${DBT_PROFILES_DIR}:/root/.dbt
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@${AIRFLOW_DB_HOST}:${AIRFLOW_DB_PORT}/${AIRFLOW_DB_NAME}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: ${AIRFLOW_EXECUTION_API_SERVER_URL}
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
+
+      FIVETRAN_API_KEY: ${FIVETRAN_API_KEY}
+      FIVETRAN_API_SECRET: ${FIVETRAN_API_SECRET}
+      FIVETRAN_CONNECTION_ID: ${FIVETRAN_CONNECTION_ID}
+
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD}
+      SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+      SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA}
+
+      HOST_PROJECT_DIR: ${HOST_PROJECT_DIR}
+      HOST_HOME: ${HOST_HOME}
+    command: dag-processor
+
+networks:
+  elt_network:
+    driver: bridge
