@@ -1,6 +1,7 @@
 import os
 import requests
-from datetime import datetime, timedelta
+from datetime import timedelta
+import pendulum
 
 from airflow import DAG
 from airflow.exceptions import AirflowException
@@ -60,7 +61,7 @@ def wait_until_fresh_success(ti) -> bool:
 
 with DAG(
     dag_id="github_fivetran_sync_then_dbt_snowflake",
-    start_date=datetime(2025, 1, 1),
+    start_date=pendulum.datetime(2026, 1, 1, tz="Europe/Helsinki"),
     schedule="0 3 * * *",
     catchup=False,
     default_args={"retries": 1, "retry_delay": timedelta(minutes=5)},
@@ -82,7 +83,7 @@ with DAG(
         python_callable=wait_until_fresh_success,
         poke_interval=60,
         timeout=3 * 60 * 60,
-        mode="poke",
+        mode="reschedule",
     )
 
     host_project_dir = os.environ["HOST_PROJECT_DIR"]
