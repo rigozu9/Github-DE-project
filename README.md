@@ -8,6 +8,8 @@ This project demonstrates a full ELT pipeline that ingests GitHub activity data 
 2. docker compose up
 
 3. sign in to airflow
+
+4. Lorem ipsum
 ## Architecture
 
 **GitHub → Fivetran → Snowflake → dbt → Tableau**
