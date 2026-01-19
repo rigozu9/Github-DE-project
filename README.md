@@ -2,6 +2,12 @@
 
 This project demonstrates a full ELT pipeline that ingests GitHub activity data into Snowflake, transforms it with dbt into analytics-ready models, and visualizes the results in Tableau.
 
+## Start up instructions
+1. docker compose up init-airflow
+
+2. docker compose up
+
+3. sign in to airflow
 ## Architecture
 
 **GitHub → Fivetran → Snowflake → dbt → Tableau**

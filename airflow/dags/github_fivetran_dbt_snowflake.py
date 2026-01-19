@@ -88,12 +88,42 @@ with DAG(
 
     host_project_dir = os.environ["HOST_PROJECT_DIR"]
     host_home = os.environ["HOST_HOME"]
-
+    print(host_project_dir)
     t3 = DockerOperator(
+        task_id="dbt_deps",
+        image="ghcr.io/dbt-labs/dbt-snowflake:1.9.0",
+        docker_url="unix://var/run/docker.sock",
+        auto_remove='success',
+        working_dir="/opt/dbt",
+        mount_tmp_dir=False,
+        command=[
+            "deps",
+            "--profiles-dir", "/root/.dbt",
+            "--project-dir", "/opt/dbt",
+            "--profile", "github_data_pipeline",
+            "--target", "dev",
+        ],
+        mounts=[
+            Mount(source=os.path.join(host_project_dir, "github-de"), target="/opt/dbt", type="bind"),
+            Mount(source=os.path.join(host_home, ".dbt"), target="/root/.dbt", type="bind"),
+        ],
+        environment={
+            "SNOWFLAKE_ACCOUNT": os.environ["SNOWFLAKE_ACCOUNT"],
+            "SNOWFLAKE_USER": os.environ["SNOWFLAKE_USER"],
+            "SNOWFLAKE_PASSWORD": os.environ["SNOWFLAKE_PASSWORD"],
+            "SNOWFLAKE_ROLE": os.environ["SNOWFLAKE_ROLE"],
+            "SNOWFLAKE_WAREHOUSE": os.environ["SNOWFLAKE_WAREHOUSE"],
+            "SNOWFLAKE_DATABASE": os.environ["SNOWFLAKE_DATABASE"],
+            "SNOWFLAKE_SCHEMA": os.environ["SNOWFLAKE_SCHEMA"],
+        },
+    )
+
+    t4 = DockerOperator(
         task_id="dbt_run",
         image="ghcr.io/dbt-labs/dbt-snowflake:1.9.0",
         docker_url="unix://var/run/docker.sock",
         auto_remove='success',
+        working_dir="/opt/dbt",
         mount_tmp_dir=False,
         command=[
             "run",
@@ -117,11 +147,12 @@ with DAG(
         },
     )
 
-    t4 = DockerOperator(
+    t5 = DockerOperator(
         task_id="dbt_run_test",
         image="ghcr.io/dbt-labs/dbt-snowflake:1.9.0",
         docker_url="unix://var/run/docker.sock",
         auto_remove='success',
+        working_dir="/opt/dbt",
         mount_tmp_dir=False,
         command=[
             "test",
@@ -145,4 +176,4 @@ with DAG(
         },
     )
 
-    t0_manual >> t1 >> t2 >> t3 >> t4
+    t0_manual >> t1 >> t2 >> t3 >> t4 >> t5
