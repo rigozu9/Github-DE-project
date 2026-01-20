@@ -9,7 +9,7 @@ This project demonstrates a full ELT pipeline that ingests GitHub activity data 
 
 3. sign in to airflow
 
-4. Sanity test
+4. Infrakit test
 ## Architecture
 
 **GitHub → Fivetran → Snowflake → dbt → Tableau**
