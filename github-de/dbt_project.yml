@@ -31,10 +31,10 @@ clean-targets:         # directories to be removed by `dbt clean`
 # files using the `{{ config(...) }}` macro.
 models:
   github_data_pipeline:
-    # Config indicated by + and applies to all files under models/example/
+    +snowflake_warehouse: 'PC_FIVETRAN_WH'
     staging:
       +materialized: view
-      +snowflake_warehouse: 'PC_FIVETRAN_WH'
+    intermediates:
+      +materialized: view
     marts:
       +materialized: table
-      +snowflake_warehouse: 'PC_FIVETRAN_WH'
